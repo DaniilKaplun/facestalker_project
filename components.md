@@ -3,3 +3,4 @@ jetson orin nano, keybord mouse, cabels
 micro servo mg90s
 camera
 wireing
+camera ugreen cm831
