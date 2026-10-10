@@ -7,10 +7,11 @@ camera ugreen cm831
 
 ## Taking a photo on the Jetson
 
-The UGREEN Camera 4K is available as `/dev/video0`. Install OpenCV once:
+The UGREEN Camera 4K is available as `/dev/video0`. Install the dependencies
+once (the command prompts for the Ubuntu password):
 
 ```bash
-sudo apt-get install python3-opencv
+./install_dependencies.sh
 ```
 
 Then take a photo:
