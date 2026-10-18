@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Серва — шаг 10 градусов
+Comment=0–180–0, шаг 10 градусов раз в секунду; остановка Ctrl+C
+Exec=bash /home/daniil/facestalker_project/run_servo_sweep.sh
+Icon=media-playback-start
+Terminal=true
+Categories=Development;
