@@ -10,7 +10,7 @@ fi
 
 echo "Installing FaceStalker camera and servo dependencies..."
 sudo apt-get update
-sudo apt-get install --yes python3 python3-opencv python3-tk python3-jetson-gpio
+sudo apt-get install --yes python3 python3-opencv opencv-data python3-tk python3-jetson-gpio
 
 python3 - <<'PY'
 import cv2

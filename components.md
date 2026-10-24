@@ -76,4 +76,11 @@ python3 take_photo.py
 
 Photos are saved as timestamped JPEG files in `~/Desktop/photos`. Use
 `--device /dev/video1`, `--width`, or `--height` if the camera's active V4L2
-device or desired resolution differs.
+device or desired resolution differs. Each saved photo has green boxes drawn
+around faces detected by OpenCV's frontal-face classifier. If needed, tune
+the detector with `--face-scale-factor` (default `1.1`) and
+`--face-min-neighbors` (default `5`).
+
+The included installer installs the `opencv-data` package that contains the
+face-detector model. If the script reports that face-detector data is missing,
+run `sudo apt-get install opencv-data` once on the Jetson.
