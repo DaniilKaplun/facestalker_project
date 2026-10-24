@@ -30,6 +30,7 @@ class DeepStreamPreview(DeepStreamPhotoCapture):
             while node is not None:
                 meta = pyds.NvDsFrameMeta.cast(node.data)
                 faces = self._objects_for_frame(meta)
+                self.process_faces(faces)
                 if self.started is None:
                     self.started = time.monotonic()
                 self.frames_seen += 1
@@ -42,6 +43,7 @@ class DeepStreamPreview(DeepStreamPhotoCapture):
                         pyds.unmap_nvds_buf_surface(hash(buffer), meta.batch_id)
                     for x, y, w, h in faces:
                         cv2.rectangle(image, (x, y), (x+w, y+h), (180, 105, 255), 2)
+                    self.annotate(image, faces)
                     with self.lock:
                         self.latest = image
                 elif self.frames_seen >= self.args.check_frames:
@@ -56,12 +58,23 @@ class DeepStreamPreview(DeepStreamPhotoCapture):
             GLib.idle_add(self.loop.quit)
         return Gst.PadProbeReturn.OK
 
+    def process_faces(self, faces):
+        pass
+
+    def annotate(self, image, faces):
+        pass
+
+    def handle_key(self, key):
+        pass
+
     def _show(self):
         with self.lock:
             image, self.latest = self.latest, None
         if image is not None:
             cv2.imshow(self.window, image)
-        if cv2.waitKey(1) & 255 in (27, ord('q'), ord('Q')) or cv2.getWindowProperty(self.window, cv2.WND_PROP_VISIBLE) < 1:
+        key = cv2.waitKey(1) & 255
+        self.handle_key(key)
+        if key in (27, ord('q'), ord('Q')) or cv2.getWindowProperty(self.window, cv2.WND_PROP_VISIBLE) < 1:
             self.finished = True
             self.loop.quit()
             return False
@@ -106,7 +119,7 @@ class DeepStreamPreview(DeepStreamPhotoCapture):
               f"processing FPS: {max(0, self.frames_seen-1)/elapsed if elapsed else 0:.1f}")
 
 
-def main():
+def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--device', default='/dev/video0')
     parser.add_argument('--width', type=int, default=1280)
@@ -116,6 +129,11 @@ def main():
     parser.add_argument('--timeout', type=int, default=300)
     parser.add_argument('--face-class-id', type=int, default=0)
     parser.add_argument('--pgie-config', type=Path, default=Path(__file__).resolve().parent / 'face_detector_pgie_config.txt')
+    return parser
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
     if min(args.width, args.height, args.fps, args.timeout) < 1 or min(args.check_frames, args.face_class_id) < 0:
         parser.error('Invalid camera or detection settings')

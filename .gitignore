@@ -10,4 +10,5 @@ servo-*.log
 /.deepstream-build/
 /photo-deepstream.log
 /camera-deepstream.log
+/facestalker.log
 /install-dependencies.log

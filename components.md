@@ -88,6 +88,25 @@ When a new feature needs another package, add it to the installer first.
 
 ## Live camera preview
 
+## FaceStalker servo following
+
+Launch "FaceStalker — слежение за лицом" on the Jetson Desktop, or run
+`bash run_facestalker.sh`. Close other camera applications first.
+DeepStream draws pink face boxes; the largest by area is highlighted green.
+The servo follows its horizontal centre toward the cyan vertical centre line.
+It uses the saved calibration, a 4% frame-width dead zone and a maximum
+300 us/second pulse change. Without a face it holds its position; stale
+frames suspend movement, and a two-second camera stall exits and disables PWM.
+Q/Esc or closing the window releases the camera and disables PWM.
+R reverses the servo direction for the current run; to choose it at launch,
+use `bash run_facestalker.sh --servo-direction 1` (default: -1).
+The servo initially commands 1500 us after the first frame; its physical
+starting position cannot be sensed. Logs: `facestalker.log`.
+No new dependencies are required. `--check-frames 120` runs a finite headless
+check including servo movement.
+
+## Camera preview without servo following
+
 The Desktop shortcut "Камера — прямой эфир" now starts
 `bash run_camera_deepstream.sh`: YuNet runs through DeepStream nvinfer/TensorRT,
 and all detected faces receive pink (#FF69B4) boxes. Q, Esc, or closing the

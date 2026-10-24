@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=FaceStalker — слежение за лицом
+Comment=Камера и серва следят за самым крупным лицом. R — сменить направление, Q/Esc — выход
+Exec=bash /home/daniil/facestalker_project/run_facestalker.sh
+Path=/home/daniil/facestalker_project
+Icon=camera-video
+Terminal=true
+Categories=AudioVideo;Video;
