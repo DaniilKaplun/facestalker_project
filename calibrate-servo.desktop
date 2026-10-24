@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Калибровка сервы
+Comment=Ползунок, клавиши и сохранение безопасных границ сервы
+Exec=python3 /home/daniil/facestalker_project/calibrate_servo.py
+Icon=preferences-system
+Terminal=false
+Categories=Settings;

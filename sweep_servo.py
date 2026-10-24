@@ -5,10 +5,14 @@ import math
 import signal
 import time
 from servo_control import ServoController
+from servo_calibration import load_calibration
 
 
-def sweep_positions():
-    return list(range(0, 181, 10)) + list(range(170, -1, -10))
+def sweep_positions(travel=180):
+    forward = list(range(0, math.ceil(travel), 10))
+    if not forward or forward[-1] != travel:
+        forward.append(travel)
+    return forward + forward[-2::-1]
 
 
 def main():
@@ -24,13 +28,15 @@ def main():
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGHUP, stop)
-    print('Sweep 0 -> 180 -> 0, step 10 degrees. Ctrl+C stops PWM.', flush=True)
-    print('Nominal positions use 1–2 ms pulses; shaft angles are not measured.', flush=True)
+    calibration = load_calibration()
+    print(f'Sweep 0 -> {calibration.travel_degrees:g} -> 0, step 10 degrees. Ctrl+C stops PWM.', flush=True)
+    print(f'Pulse range: {calibration.min_pulse_us:g}–{calibration.max_pulse_us:g} us; '
+          f'angle scale: {"measured" if calibration.angle_measured else "nominal, not measured"}.', flush=True)
     try:
         with ServoController() as servo:
             cycle = 0
             while args.cycles == 0 or cycle < args.cycles:
-                for angle in sweep_positions()[0 if cycle == 0 else 1:]:
+                for angle in sweep_positions(calibration.travel_degrees)[0 if cycle == 0 else 1:]:
                     servo.set_angle(angle)
                     time.sleep(args.interval)
                 cycle += 1

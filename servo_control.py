@@ -6,18 +6,20 @@ import importlib
 import math
 import os
 from pathlib import Path
+from servo_calibration import Calibration, PULSE_MIN_US, PULSE_MAX_US, load_calibration
 
 SERVO_PIN = 15
 FREQUENCY_HZ = 50
 
 
 def angle_to_duty_cycle(angle: float) -> float:
-    if not math.isfinite(angle) or not 0 <= angle <= 180:
-        raise ValueError('Angle must be finite and between 0 and 180 degrees.')
-    return (1.0 + angle / 180.0) / 20.0 * 100.0
+    return load_calibration().pulse_for_angle(angle) / 20000 * 100
 
 
 class ServoController:
+    def __init__(self, use_saved_calibration=True):
+        self.use_saved_calibration = use_saved_calibration
+
     def __enter__(self):
         self.pwm = None
         self.gpio = None
@@ -31,6 +33,7 @@ class ServoController:
                 self.lock = os.open(lock_path, os.O_RDONLY | os.O_NOFOLLOW)
         try:
             fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.calibration = load_calibration() if self.use_saved_calibration else Calibration()
             self.gpio = importlib.import_module('Jetson.GPIO')
             self.gpio.setmode(self.gpio.BOARD)
             # Keep pin 15 routed to hardware PWM; do not request it as GPIO.
@@ -42,13 +45,22 @@ class ServoController:
             raise
 
     def set_angle(self, angle: float):
-        duty = angle_to_duty_cycle(angle)
+        pulse = self.calibration.pulse_for_angle(angle)
+        self.set_pulse_us(pulse)
+        print(f'Pin 15: target={angle:g} deg, pulse={pulse:.0f} us, 50 Hz', flush=True)
+        self.print_state()
+
+    def set_pulse_us(self, pulse: float):
+        if not math.isfinite(pulse) or not PULSE_MIN_US <= pulse <= PULSE_MAX_US:
+            raise ValueError('Pulse must be between 500 and 2500 us.')
+        duty = pulse / 20000 * 100
         if self.started:
             self.pwm.ChangeDutyCycle(duty)
         else:
             self.pwm.start(duty)
             self.started = True
-        print(f'Pin 15: target={angle:g} deg, pulse={1000 + angle / 180 * 1000:.0f} us, 50 Hz', flush=True)
+
+    def print_state(self):
         for chip in Path('/sys/class/pwm').glob('pwmchip*'):
             if '3280000.pwm' in str(chip.resolve()):
                 state = chip / 'pwm0'

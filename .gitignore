@@ -2,3 +2,5 @@ __pycache__/
 *.py[cod]
 servo-*.log
 /AGENTS.md
+/servo_calibration.json
+/servo_calibration.json.tmp
