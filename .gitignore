@@ -4,3 +4,10 @@ servo-*.log
 /AGENTS.md
 /servo_calibration.json
 /servo_calibration.json.tmp
+/models/
+/lib/
+/.venv-deepstream/
+/.deepstream-build/
+/photo-deepstream.log
+/camera-deepstream.log
+/install-dependencies.log

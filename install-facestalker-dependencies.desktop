@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Установить зависимости FaceStalker
+Comment=Установить и проверить все зависимости камеры, сервы и DeepStream
+Exec=bash -c "cd /home/daniil/facestalker_project || exit 1; bash ./install_dependencies.sh 2>&1 | tee install-dependencies.log; result=\\${PIPESTATUS[0]}; if [ \\$result -ne 0 ]; then echo 'Установка завершилась с ошибкой. Журнал: install-dependencies.log'; fi; read -rp 'Нажмите Enter для закрытия...'; exit \\$result"
+Path=/home/daniil/facestalker_project
+Icon=system-software-install
+Terminal=true
+Categories=Development;
+StartupNotify=true

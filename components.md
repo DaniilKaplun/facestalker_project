@@ -82,5 +82,86 @@ the detector with `--face-scale-factor` (default `1.1`) and
 `--face-min-neighbors` (default `5`).
 
 The included installer installs the `opencv-data` package that contains the
-face-detector model. If the script reports that face-detector data is missing,
-run `sudo apt-get install opencv-data` once on the Jetson.
+face-detector model. Always install or update FaceStalker dependencies by
+running `./install_dependencies.sh`; do not run `apt-get install` directly.
+When a new feature needs another package, add it to the installer first.
+
+## Live camera preview
+
+The Desktop shortcut "Камера — прямой эфир" now starts
+`bash run_camera_deepstream.sh`: YuNet runs through DeepStream nvinfer/TensorRT,
+and all detected faces receive pink (#FF69B4) boxes. Q, Esc, or closing the
+window stops the preview. Logs are saved to `camera-deepstream.log`.
+The wrapper uses the same installed model, parser and Python environment as
+DeepStream photo capture. No additional dependencies are needed.
+Deploy `view_camera_deepstream.py` and `run_camera_deepstream.sh` alongside
+`take_photo_deepstream.py`, and update `view-camera.desktop` on the Desktop.
+Use `bash run_camera_deepstream.sh --check-frames 120` for a headless inference
+check with measured processing FPS and the maximum detected face count.
+
+### Legacy OpenCV preview
+
+The optional `view_camera.py` script shows
+the UGREEN camera in a window on the Jetson desktop. The default is MJPEG,
+1280x720 at a requested 30 FPS; the camera may negotiate different settings.
+Press Q or Esc, or close the preview window, to release the camera and exit.
+Every frame is processed by OpenCV's frontal-face classifier, with green boxes
+drawn around detected faces, as in the OpenCV photo capture. The classifier is
+loaded once and reused. The preview does not record video.
+It uses the OpenCV dependency from the single project installer.
+
+```bash
+python3 view_camera.py
+```
+
+Override capture settings with `--device`, `--width`, `--height`, or `--fps`.
+Tune face detection with `--face-scale-factor` (default `1.1`) and
+`--face-min-neighbors` (default `5`), as for photo capture.
+Use `python3 view_camera.py --check-frames 10` for a finite camera check
+over SSH without a graphical display. An ordinary SSH session does not show
+the preview window on Windows; launch the desktop shortcut in Ubuntu to view it.
+Close the preview before running a photo capture because they share the camera.
+
+## DeepStream photo capture
+
+The Desktop shortcut "Сделать фото — DeepStream" runs
+`run_photo_deepstream.sh`. It uses `face_detector_pgie_config.txt` in the
+project directory automatically. No configuration path is requested.
+The terminal stays open after capture; output is saved to
+`photo-deepstream.log` in the project directory. Deploy the wrapper into
+`/home/daniil/facestalker_project` and `take-photo-deepstream.desktop` onto
+the Jetson Desktop.
+
+The default model is OpenCV Zoo YuNet (2023mar ONNX, face class ID 0),
+executed by NVIDIA DeepStream `nvinfer` / TensorRT on the GPU. The included
+`nvdsinfer_yunet.cpp` parser decodes the model's outputs; nvinfer applies NMS.
+The installer downloads the pinned model with SHA-256 verification and its
+license, installs DeepStream 9.2, builds NVIDIA's pinned Python bindings against
+the installed SDK, and builds the parser. This installation profile targets
+the current Jetson: Ubuntu 24.04, L4T 39.2 and Python 3.12.
+
+Install all dependencies using the single Desktop shortcut
+"Установить зависимости FaceStalker" (requires the Ubuntu sudo password).
+It runs `install_dependencies.sh` without options, installs dependencies for
+the camera, servo and DeepStream, and logs output to `install-dependencies.log`.
+The equivalent terminal command is:
+
+```bash
+bash install_dependencies.sh
+```
+
+Then use the desktop shortcut or `bash run_photo_deepstream.sh`.
+The first capture can take longer while TensorRT builds its engine; the
+engine is cached under `models/`, and the default timeout is 300 seconds.
+Model, parser binaries, build files and the Python environment are ignored
+by Git and reproduced by the single installer. There are no separate
+DeepStream installation scripts or installation modes.
+
+Installation references: [NVIDIA DeepStream installation](https://docs.nvidia.com/deepstream/text/DS_Installation),
+[NVIDIA Python bindings](https://github.com/NVIDIA-AI-IOT/deepstream_python_apps/tree/8ad0349ed7a496fae35ebb21c350641727070b89/bindings),
+and [OpenCV Zoo YuNet](https://github.com/opencv/opencv_zoo/tree/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_detection_yunet).
+
+The script reads the detector metadata, draws pink (#FF69B4) boxes around class-0 face
+detections, and saves a timestamped `photo-deepstream-*.jpg` in
+`~/Desktop/photos`. Change `--face-class-id` when the selected face model uses
+a different class ID.

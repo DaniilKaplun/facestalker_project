@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Сделать фото — DeepStream
+Comment=Фото с розовыми рамками вокруг лиц через NVIDIA DeepStream
+Exec=bash /home/daniil/facestalker_project/run_photo_deepstream.sh
+Path=/home/daniil/facestalker_project
+Icon=camera-photo
+Terminal=true
+Categories=Graphics;Photography;

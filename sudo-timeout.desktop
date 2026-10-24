@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Sudo timeout - 3 hours
+Name[ru]=Таймаут sudo — 3 часа
+Comment=Set the sudo password cache to 180 minutes
+Exec=bash /home/daniil/facestalker_project/set_sudo_timeout.sh
+Terminal=true
+Icon=utilities-terminal
+Categories=System;

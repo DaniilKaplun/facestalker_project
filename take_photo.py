@@ -14,7 +14,7 @@ try:
 except ModuleNotFoundError:
     sys.exit(
         "OpenCV is not installed. On the Jetson run: "
-        "sudo apt-get install python3-opencv"
+        "bash /home/daniil/facestalker_project/install_dependencies.sh"
     )
 
 
@@ -81,21 +81,28 @@ def face_cascade_path() -> Path:
 
     raise RuntimeError(
         "Face-detector data is not installed. On the Jetson run: "
-        "sudo apt-get install opencv-data"
+        "bash /home/daniil/facestalker_project/install_dependencies.sh"
     )
+
+
+def load_face_detector():
+    """Load the classifier once so live capture can reuse it across frames."""
+    cascade_path = face_cascade_path()
+    detector = cv2.CascadeClassifier(str(cascade_path))
+    if detector.empty():
+        raise RuntimeError(f"Could not load face detector: {cascade_path}")
+    return detector
 
 
 def draw_face_boxes(
     frame,
     scale_factor: float,
     min_neighbors: int,
+    detector=None,
 ) -> int:
     """Draw green boxes around detected frontal faces and return their count."""
-    cascade_path = face_cascade_path()
-
-    detector = cv2.CascadeClassifier(str(cascade_path))
-    if detector.empty():
-        raise RuntimeError(f"Could not load face detector: {cascade_path}")
+    if detector is None:
+        detector = load_face_detector()
 
     grayscale = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     faces = detector.detectMultiScale(
