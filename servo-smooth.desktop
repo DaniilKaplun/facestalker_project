@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Серва — тест плавности
+Comment=Медленный поворот без камеры; Ctrl+C — остановка
+Exec=bash /home/daniil/facestalker_project/run_servo_smooth.sh
+Path=/home/daniil/facestalker_project
+Icon=utilities-system-monitor
+Terminal=true
+Categories=Development;

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Серва — замедленный поворот
+Comment=Та же последовательность углов; скорость цели 150°/с, обновление 10 мс; Ctrl+C — остановка
+Exec=bash /home/daniil/facestalker_project/run_servo_positions.sh --angle-speed 150 --interval 0.01 --log /home/daniil/facestalker_project/servo-positions-slow.csv
+Path=/home/daniil/facestalker_project
+Icon=utilities-system-monitor
+Terminal=true
+Categories=Development;

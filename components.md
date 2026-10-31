@@ -35,6 +35,45 @@ Deploy `sweep_servo.py`, `servo_control.py`, `servo_calibration.py`, and `run_se
 Desktop and mark the launcher executable. No sudo is needed to run the sweep
 when the user belongs to the `gpio` group.
 
+## Servo smoothness diagnostic
+
+Stop FaceStalker and other servo applications, then use the Desktop launcher
+"Серва — тест плавности" or `bash run_servo_smooth.sh`.
+`test_servo_smooth.py` uses no camera or face detector. It initially commands
+1500 us and holds for two seconds (the initial positioning may be abrupt).
+Then it ramps 1500 -> 1650 -> 1350 -> 1500 us, at 100 us/s with 20 ms
+updates (2 us per command), for one cycle. The range must fit the saved
+calibration. Ctrl+C stops PWM; normal completion also releases it.
+`servo-smooth.csv` records command intervals, pulse steps, write durations
+and sysfs duty values in nanoseconds; `servo-smooth.log` contains the summary.
+These values describe software output, not measured servo angle or an
+oscilloscope measurement. Each run overwrites these diagnostic files.
+Options: `--span 100 --speed 50 --cycles 2`; `--dry-run` skips GPIO.
+
+For comparison, "Серва — отдельные положения" runs
+`bash run_servo_positions.sh`: seven commands, 0 -> 180 -> 90 -> 45 -> 135
+-> 0 -> 180 degrees, with a two-second hold after each command. Each angle
+maps through the saved calibration; the scale is nominal unless travel was
+measured during calibration. No initial neutral command is inserted.
+Hardware PWM stays
+active at 50 Hz during each hold; no intermediate position commands are sent.
+This uses the same calibration and process lock as the ramp test.
+Logs are `servo-positions.csv` and `servo-positions.log`.
+Equivalent: `python3 test_servo_smooth.py --mode positions`.
+
+"Серва — замедленный поворот" uses the same angle sequence with an
+interpolated target speed of 150 nominal degrees/s, 10 ms target updates,
+and two-second holds (hardware PWM remains at 50 Hz)
+(twice the previous 75 degrees/s setting).
+The user confirmed 150 degrees/s with 10 ms updates as the preferred speed;
+this is also the FaceStalker tracking setting. Actual shaft speed is not measured.
+First positioning to 0 degrees is direct because initial position
+is unknown. Adjust with `bash run_servo_positions.sh --angle-speed 150 --interval 0.01`.
+Setting `--angle-speed 0` restores direct position commands. Intermediate
+commands may reproduce the jerkiness seen in the slow ramp test.
+The slow launcher writes `servo-positions-slow.csv`; terminal output still
+uses `servo-positions.log`.
+
 ## Interactive servo calibration
 
 The desktop shortcut "Калибровка сервы" launches `calibrate_servo.py` (Tkinter).
@@ -94,8 +133,29 @@ Launch "FaceStalker — слежение за лицом" on the Jetson Desktop,
 `bash run_facestalker.sh`. Close other camera applications first.
 DeepStream draws pink face boxes; the largest by area is highlighted green.
 The servo follows its horizontal centre toward the cyan vertical centre line.
-It uses the saved calibration, a 4% frame-width dead zone and a maximum
-300 us/second pulse change. Without a face it holds its position; stale
+It uses the saved calibration and moves at up to 150 nominal degrees/second
+toward the target with a PID velocity controller, braking near centre.
+It stops inside 4% of frame width either side of centre and resumes only
+outside 6%, so box jitter does not repeatedly restart movement.
+Target updates run every 10 ms;
+hardware PWM remains at 50 Hz. These are the user-confirmed preferred settings
+from the angle-sequence test. Pulse speed is calculated from the saved travel
+and safe pulse range; it is not a fixed microseconds/second value.
+After a delayed tick the controller limits the step to 10 ms of movement.
+PID uses normalized horizontal image error: 1 is half the frame width.
+Defaults are Kp=180, Ki=20, Kd=15; output is nominal degrees/second.
+P and I act on error outside the stop zone. D uses raw image error and a
+100 ms low-pass filter. I and D update once per new camera timestamp,
+while the last velocity command is applied on 10 ms control ticks.
+Integral contribution is bounded to 20 degrees/s and stops accumulating
+when output speed or servo position saturates. D may brake but cannot
+command movement away from the face. Centre stop, face loss, stale frames,
+large error jumps and direction reversal clear PID history.
+Tune without editing code: `bash run_facestalker.sh --pid-kp 180 --pid-ki 20 --pid-kd 15`.
+These are initial gains verified by software tests; hardware tuning is still
+needed for the actual camera latency and servo response.
+Run hardware-independent checks with `python3 -m unittest test_face_tracking -v`.
+Without a face it holds its position; stale
 frames suspend movement, and a two-second camera stall exits and disables PWM.
 Q/Esc or closing the window releases the camera and disables PWM.
 R reverses the servo direction for the current run; to choose it at launch,

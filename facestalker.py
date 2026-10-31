@@ -4,7 +4,8 @@ import os
 import sys
 import time
 
-from face_tracking import FaceTracker
+from face_tracking import (FaceTracker, TRACKING_SPEED_DEG_S, CONTROL_INTERVAL_MS,
+                           PID_KP, PID_KI, PID_KD)
 from servo_control import ServoController
 from view_camera_deepstream import DeepStreamPreview, build_parser, GLib, Gst, cv2
 
@@ -12,7 +13,8 @@ from view_camera_deepstream import DeepStreamPreview, build_parser, GLib, Gst, c
 class FaceStalker(DeepStreamPreview):
     def __init__(self, args, servo):
         self.servo = servo
-        self.tracker = FaceTracker(servo.calibration, args.servo_direction)
+        self.tracker = FaceTracker(servo.calibration, args.servo_direction,
+                                   args.pid_kp, args.pid_ki, args.pid_kd)
         self.faces = []
         self.frame_time = None
         self.tick_time = time.monotonic()
@@ -32,12 +34,13 @@ class FaceStalker(DeepStreamPreview):
             x, y, w, h = target
             cv2.rectangle(image, (x, y), (x+w, y+h), (0, 255, 0), 3)
             cv2.circle(image, (x+w//2, y+h//2), 5, (0, 255, 0), -1)
-        cv2.putText(image, f'Pan {self.tracker.pulse:.0f} us | direction {self.tracker.direction:+d} | R: reverse',
+        cv2.putText(image, f'Pan {self.tracker.pulse:.0f} us | max {TRACKING_SPEED_DEG_S:g} deg/s | direction {self.tracker.direction:+d} | R: reverse',
                     (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
 
     def handle_key(self, key):
         if key in (ord('r'), ord('R')):
             self.tracker.direction *= -1
+            self.tracker.reset()
             print(f'Servo direction: {self.tracker.direction:+d}', flush=True)
 
     def tick(self):
@@ -52,6 +55,7 @@ class FaceStalker(DeepStreamPreview):
             self.loop.quit()
             return False
         if now - frame_time > 0.2:
+            self.tracker.reset()
             return True
         if not self.servo.started:
             try:
@@ -62,7 +66,7 @@ class FaceStalker(DeepStreamPreview):
                 return False
             return True
         previous = self.tracker.pulse
-        self.tracker.update(faces, self.args.width, dt)
+        self.tracker.update(faces, self.args.width, dt, sample_time=frame_time)
         if abs(self.tracker.pulse - previous) > 0.01:
             try:
                 self.servo.set_pulse_us(self.tracker.pulse)
@@ -75,7 +79,10 @@ class FaceStalker(DeepStreamPreview):
     def run(self):
         # Enable at neutral only after the first valid camera frame.
         self.tick_time = time.monotonic()
-        timer = GLib.timeout_add(20, self.tick)
+        print(f'Tracking: max {TRACKING_SPEED_DEG_S:g} nominal deg/s with braking near centre, '
+              f'{CONTROL_INTERVAL_MS} ms target updates, 50 Hz hardware PWM.', flush=True)
+        print(f'PID: Kp={self.tracker.kp:g}, Ki={self.tracker.ki:g}, Kd={self.tracker.kd:g}', flush=True)
+        timer = GLib.timeout_add(CONTROL_INTERVAL_MS, self.tick)
         try:
             super().run()
         finally:
@@ -87,6 +94,9 @@ def main():
     parser = build_parser()
     parser.description = __doc__
     parser.add_argument('--servo-direction', type=int, choices=(-1, 1), default=-1)
+    parser.add_argument('--pid-kp', type=float, default=PID_KP)
+    parser.add_argument('--pid-ki', type=float, default=PID_KI)
+    parser.add_argument('--pid-kd', type=float, default=PID_KD)
     args = parser.parse_args()
     if min(args.width, args.height, args.fps, args.timeout) < 1 or min(args.check_frames, args.face_class_id) < 0:
         parser.error('Invalid camera or detection settings')

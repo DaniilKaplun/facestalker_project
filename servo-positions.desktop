@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Серва — отдельные положения
+Comment=0° → 180° → 90° → 45° → 135° → 0° → 180°, пауза 2 секунды; Ctrl+C — остановка
+Exec=bash /home/daniil/facestalker_project/run_servo_positions.sh
+Path=/home/daniil/facestalker_project
+Icon=utilities-system-monitor
+Terminal=true
+Categories=Development;
