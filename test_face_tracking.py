@@ -3,7 +3,7 @@ from collections import deque
 import math
 import unittest
 
-from face_tracking import FaceTracker
+from face_tracking import FaceTracker, select_face
 from servo_calibration import Calibration
 
 
@@ -76,6 +76,41 @@ class PIDTests(unittest.TestCase):
         for value in (-1, math.nan, math.inf):
             with self.assertRaises(ValueError):
                 FaceTracker(self.calibration, kp=value)
+
+    def test_simple_tracking_moves_without_pid_and_holds_near_centre(self):
+        t = FaceTracker(self.calibration, kp=0, ki=0, kd=0)
+        for error in (.5, .2, -.3):
+            before = t.pulse
+            t.update_target(faces(error)[0], 1280, .01, use_pid=False)
+            self.assertAlmostEqual((before - t.pulse) / t.us_per_degree,
+                                   math.copysign(.3, error))
+        before = t.pulse
+        for target in (faces(.04)[0], faces(.1)[0], None):
+            t.update_target(target, 1280, .01, use_pid=False)
+        self.assertEqual(t.pulse, before)
+        self.assertEqual((t.integral, t.derivative), (0, 0))
+
+    def test_two_axes_follow_same_face_with_independent_calibrations(self):
+        pan = self.tracker
+        tilt = FaceTracker(Calibration(1100, 1700, 30, 90), direction=1)
+        # A smaller face above centre must not affect either axis.
+        target = select_face([(10, 10, 40, 40), (540, 500, 200, 200)])
+        for tick in range(100):
+            pan.update_target(target, 1280, .01)
+            tilt.update_target(target, 720, .01, axis=1)
+        self.assertEqual(pan.pulse, 1500)
+        self.assertEqual(tilt.pulse, tilt.maximum)
+        target = select_face([(900, 260, 200, 200)])
+        pan.update_target(target, 1280, .01)
+        tilt.update_target(target, 720, .01, axis=1)
+        self.assertLess(pan.pulse, 1500)
+        self.assertEqual(tilt.pulse, tilt.maximum)
+        pan_position = pan.pulse
+        for axis, tracker in enumerate((pan, tilt)):
+            tracker.update_target(None, (1280, 720)[axis], .01, axis=axis)
+            self.assertEqual(tracker.velocity_deg_s, 0)
+        self.assertEqual(pan.pulse, pan_position)
+        self.assertEqual(tilt.pulse, tilt.maximum)
 
     def test_delayed_camera_simulation(self):
         # Approximate plant only; this does not substitute for tuning real hardware.

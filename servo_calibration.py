@@ -6,6 +6,10 @@ import os
 from pathlib import Path
 
 CALIBRATION_PATH = Path(__file__).with_name('servo_calibration.json')
+SERVO_CALIBRATION_PATHS = {
+    15: CALIBRATION_PATH,
+    33: CALIBRATION_PATH.with_name('servo_calibration_pin33.json'),
+}
 PULSE_MIN_US = 500
 PULSE_MAX_US = 2500
 

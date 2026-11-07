@@ -1,8 +1,9 @@
-"""Hardware-independent horizontal face-following controller."""
+"""Hardware-independent face-following PID for either axis."""
 import math
 
 # User-selected settings, confirmed with the angle-sequence test.
 TRACKING_SPEED_DEG_S = 150.0
+SIMPLE_SPEED_DEG_S = 30.0
 CONTROL_INTERVAL_MS = 10
 STOP_ERROR = 0.08       # 4% of frame width either side of centre.
 RESUME_ERROR = 0.12     # Restart only outside 6%, to ignore box jitter.
@@ -11,6 +12,11 @@ PID_KI = 20.0           # deg/s per integrated error-second.
 PID_KD = 15.0           # deg/s per error/second.
 DERIVATIVE_FILTER_S = 0.10
 MAX_INTEGRAL_SPEED = 20.0
+
+
+def select_face(faces):
+    return max((face for face in faces if face[2] > 0 and face[3] > 0),
+               key=lambda face: face[2] * face[3], default=None)
 
 
 class FaceTracker:
@@ -38,7 +44,11 @@ class FaceTracker:
         self.velocity_deg_s = 0.0
 
     def update(self, faces, width, dt, sample_time=None):
-        if not math.isfinite(dt) or dt < 0 or not math.isfinite(width) or width <= 0:
+        return self.update_target(select_face(faces), width, dt, sample_time)
+
+    def update_target(self, target, extent, dt, sample_time=None, *, axis=0, use_pid=True):
+        if (target is None or not math.isfinite(dt) or dt < 0
+                or not math.isfinite(extent) or extent <= 0):
             self.reset()
             return None
         self.clock += dt
@@ -46,12 +56,7 @@ class FaceTracker:
         if not math.isfinite(sample_time):
             self.reset()
             return None
-        target = max((f for f in faces if f[2] > 0 and f[3] > 0),
-                     key=lambda f: f[2] * f[3], default=None)
-        if target is None:
-            self.reset()
-            return None
-        error = (target[0] + target[2] / 2 - width / 2) / (width / 2)
+        error = (target[axis] + target[axis + 2] / 2 - extent / 2) / (extent / 2)
         if not math.isfinite(error):
             self.reset()
             return None
@@ -69,7 +74,9 @@ class FaceTracker:
                 self.reset()
             elif magnitude >= RESUME_ERROR:
                 self.moving = True
-            if self.moving:
+            if self.moving and not use_pid:
+                self.velocity_deg_s = math.copysign(SIMPLE_SPEED_DEG_S, error)
+            elif self.moving:
                 if sample_dt > 0 and self.last_error is not None:
                     slope = (error - self.last_error) / sample_dt
                     alpha = sample_dt / (DERIVATIVE_FILTER_S + sample_dt)

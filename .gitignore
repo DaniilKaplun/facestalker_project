@@ -1,12 +1,15 @@
 __pycache__/
 *.py[cod]
 servo-*.log
+/jetson-io.log
 /servo-smooth.csv
 /servo-positions.csv
 /servo-positions-slow.csv
 /AGENTS.md
 /servo_calibration.json
 /servo_calibration.json.tmp
+/servo_calibration_pin33.json
+/servo_calibration_pin33.json.tmp
 /models/
 /lib/
 /.venv-deepstream/

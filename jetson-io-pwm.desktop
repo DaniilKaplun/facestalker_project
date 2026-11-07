@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Jetson-IO — настройка PWM
+Comment=Настройка 40-контактного разъёма Jetson, включая PWM для сервы
+Exec=gnome-terminal --geometry=100x55 -- /bin/bash /home/daniil/facestalker_project/run_jetson_io.sh
+Icon=utilities-terminal
+Terminal=false
+Categories=Settings;HardwareSettings;

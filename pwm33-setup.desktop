@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=FaceStalker — включить PWM на пине 33
+Comment=Добавляет PWM5 для второй сервы, сохраняя PWM1 на пине 15
+Exec=/bin/bash -c "python3 /home/daniil/facestalker_project/configure_pwm33.py --install; echo; echo Нажмите Enter, чтобы закрыть окно; read -r unused"
+Icon=utilities-terminal
+Terminal=true
+Categories=Settings;HardwareSettings;

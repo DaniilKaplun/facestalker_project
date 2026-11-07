@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
-"""Interactive calibration of the servo connected to physical pin 15."""
+"""Interactive calibration of either servo, one at a time."""
 import signal
 import time
 import tkinter as tk
 from tkinter import messagebox, ttk
 
 from servo_calibration import (
-    CALIBRATION_PATH, Calibration, load_calibration, save_calibration,
+    SERVO_CALIBRATION_PATHS, Calibration, load_calibration, save_calibration,
 )
 from servo_control import ServoController
 
 
 class CalibrationWindow:
+    SERVOS = {15: 'Пин 15 — MG90S', 33: 'Пин 33 — FS90'}
+
     def __init__(self, root, controller_factory=None):
         self.root = root
-        self.controller_factory = controller_factory or (lambda: ServoController(use_saved_calibration=False))
+        self.controller_factory = controller_factory or (
+            lambda: ServoController(use_saved_calibration=False, pin=self.pin))
+        self.pin = 15
         self.controller = None
         self.current = self.target = 1500
         self.last_interaction = time.monotonic()
@@ -26,12 +30,20 @@ class CalibrationWindow:
         self.pulse_text = tk.StringVar(value='1500 мкс — нейтраль')
         self.limits_text = tk.StringVar(value='Границы ещё не записаны')
         root.title('Калибровка сервы — пин 15')
-        root.geometry('820x620')
-        root.minsize(760, 600)
+        root.geometry('820x660')
+        root.minsize(760, 640)
         root.protocol('WM_DELETE_WINDOW', self.close)
         panel = ttk.Frame(root, padding=20)
         panel.pack(fill='both', expand=True)
         ttk.Label(panel, text='Калибровка сервы', font=('Sans', 20, 'bold')).pack(anchor='w')
+        selector = ttk.Frame(panel)
+        selector.pack(fill='x', pady=(8, 0))
+        ttk.Label(selector, text='Серва:').pack(side='left')
+        self.servo_select = ttk.Combobox(selector, values=tuple(self.SERVOS.values()),
+                                         state='readonly', width=24)
+        self.servo_select.current(0)
+        self.servo_select.pack(side='left', padx=8)
+        self.servo_select.bind('<<ComboboxSelected>>', self.select_servo)
         ttk.Label(panel, text=(
             'Подводи к границам мелкими шагами. При упоре или усилении гудения сразу отступи.\n'
             'Не держи вал в упоре. Ползунок задаёт импульс, а не измеряет положение.'
@@ -83,17 +95,36 @@ class CalibrationWindow:
             root.bind_class(safety_tag, event, lambda e, d=delta: self.on_key(e, d))
         root.bind_class(safety_tag, '<Escape>', lambda e: self.stop_key())
         root.bind_class(safety_tag, '<space>', lambda e: self.stop_key())
+        self.load_selected()
+        self.timer = root.after(20, self.tick)
+
+    def select_servo(self, _event):
+        if self.controller is not None:
+            self.servo_select.set(self.SERVOS[self.pin])
+            return
+        self.pin = next(pin for pin, label in self.SERVOS.items() if label == self.servo_select.get())
+        self.root.title(f'Калибровка сервы — пин {self.pin}')
+        self.load_selected()
+
+    def load_selected(self):
+        self.current = self.target = 1500
+        self.pulse_text.set('1500 мкс — нейтраль')
+        self.endpoint_min = self.endpoint_max = None
+        self.margin.set('50')
+        self.travel.set('180')
+        self.measured.set(False)
+        self.status.set(f'Пин {self.pin}: PWM выключен. Нажми «Включить: 1500 мкс».')
+        path = SERVO_CALIBRATION_PATHS[self.pin]
         try:
-            if CALIBRATION_PATH.exists():
-                saved = load_calibration()
+            if path.exists():
+                saved = load_calibration(path)
                 self.endpoint_min, self.endpoint_max = saved.endpoint_min_us, saved.endpoint_max_us
                 self.margin.set(f'{saved.margin_us:g}')
                 self.travel.set(f'{saved.travel_degrees:g}')
                 self.measured.set(saved.angle_measured)
-                self.update_limits()
         except (OSError, ValueError, TypeError) as error:
             self.status.set(f'Предыдущая калибровка не загружена: {error}')
-        self.timer = root.after(20, self.tick)
+        self.update_limits()
 
     def start(self):
         if self.controller is not None:
@@ -107,6 +138,7 @@ class CalibrationWindow:
             self.scale.configure(state='normal')
             self.scale.set(1500)
             self.start_button.configure(state='disabled')
+            self.servo_select.configure(state='disabled')
             self.last_interaction = time.monotonic()
             self.status.set('PWM включён. Подводи к границе и записывай значение; не дави в упор.')
         except Exception as error:
@@ -123,6 +155,7 @@ class CalibrationWindow:
             text = f'Ошибка отключения PWM: {error}. Отключи питание сервы.'
         self.scale.configure(state='disabled')
         self.start_button.configure(state='normal')
+        self.servo_select.configure(state='readonly')
         self.status.set(text)
 
     def stop_key(self):
@@ -130,7 +163,7 @@ class CalibrationWindow:
         return 'break'
 
     def on_key(self, event, delta):
-        if event.widget.winfo_class() not in ('Entry', 'TEntry', 'Spinbox', 'TSpinbox'):
+        if event.widget.winfo_class() not in ('Entry', 'TEntry', 'Spinbox', 'TSpinbox', 'TCombobox'):
             self.nudge(delta)
             return 'break'
 
@@ -201,9 +234,8 @@ class CalibrationWindow:
             result = Calibration(self.endpoint_min, self.endpoint_max, float(self.margin.get()),
                                  float(self.travel.get()) if self.measured.get() else 180,
                                  self.measured.get())
-            save_calibration(result)
-            self.stop(f'Сохранено: {result.min_pulse_us:g}–{result.max_pulse_us:g} мкс. '
-                      'Перезапусти ярлык прохода сервы — он прочитает новую калибровку.')
+            save_calibration(result, SERVO_CALIBRATION_PATHS[self.pin])
+            self.stop(f'Пин {self.pin}: сохранено {result.min_pulse_us:g}–{result.max_pulse_us:g} мкс. PWM выключен.')
         except (OSError, ValueError, TypeError) as error:
             messagebox.showerror('Калибровка не сохранена', str(error), parent=self.root)
 

@@ -1,99 +1,153 @@
 #!/usr/bin/env python3
-"""DeepStream live face following on the calibrated pan servo. Q/Esc exits, R reverses."""
+"""DeepStream face following on pan (pin 15) and tilt (pin 33). Q/Esc exits."""
+from contextlib import ExitStack
 import os
+from queue import Empty, SimpleQueue
 import sys
+from threading import Event, Thread
 import time
 
-from face_tracking import (FaceTracker, TRACKING_SPEED_DEG_S, CONTROL_INTERVAL_MS,
+from face_tracking import (FaceTracker, select_face, TRACKING_SPEED_DEG_S, CONTROL_INTERVAL_MS,
                            PID_KP, PID_KI, PID_KD)
 from servo_control import ServoController
 from view_camera_deepstream import DeepStreamPreview, build_parser, GLib, Gst, cv2
 
 
 class FaceStalker(DeepStreamPreview):
-    def __init__(self, args, servo):
-        self.servo = servo
-        self.tracker = FaceTracker(servo.calibration, args.servo_direction,
-                                   args.pid_kp, args.pid_ki, args.pid_kd)
-        self.faces = []
+    def __init__(self, args, pan, tilt):
+        self.servos = (pan, tilt)
+        self.trackers = tuple(FaceTracker(servo.calibration, direction,
+                                          args.pid_kp, args.pid_ki, args.pid_kd)
+                              for servo, direction in zip(self.servos,
+                                                          (args.servo_direction, args.tilt_direction)))
+        self.target = None
+        self.pid_enabled = True
+        self.control_keys = SimpleQueue()
         self.frame_time = None
         self.tick_time = time.monotonic()
         super().__init__(args)
-        self.window = 'FaceStalker (Q / Esc: exit, R: reverse)'
+        self.window = 'FaceStalker (F: fullscreen, P / Space: tracking mode, R: pan, T: tilt, Q / Esc: exit)'
 
     def process_faces(self, faces):
         with self.lock:
-            self.faces = faces
+            self.target = select_face(faces)
             self.frame_time = time.monotonic()
 
     def annotate(self, image, faces):
         height, width = image.shape[:2]
         cv2.line(image, (width // 2, 0), (width // 2, height), (255, 255, 0), 1)
-        target = max(faces, key=lambda f: f[2] * f[3], default=None)
+        cv2.line(image, (0, height // 2), (width, height // 2), (255, 255, 0), 1)
+        target = select_face(faces)
         if target:
             x, y, w, h = target
             cv2.rectangle(image, (x, y), (x+w, y+h), (0, 255, 0), 3)
             cv2.circle(image, (x+w//2, y+h//2), 5, (0, 255, 0), -1)
-        cv2.putText(image, f'Pan {self.tracker.pulse:.0f} us | max {TRACKING_SPEED_DEG_S:g} deg/s | direction {self.tracker.direction:+d} | R: reverse',
+        pan, tilt = self.trackers
+        cv2.putText(image, f'Pan {pan.pulse:.0f} us ({pan.direction:+d}) [R] | Tilt {tilt.pulse:.0f} us ({tilt.direction:+d}) [T]',
                     (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
+        status = 'PID ON' if self.pid_enabled else 'PID OFF - simple tracking'
+        color = (0, 255, 0) if self.pid_enabled else (0, 180, 255)
+        cv2.putText(image, f'{status} [P / Space]', (15, 58),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
 
     def handle_key(self, key):
+        if key in (ord('f'), ord('F')):
+            fullscreen = cv2.getWindowProperty(self.window, cv2.WND_PROP_FULLSCREEN)
+            mode = cv2.WINDOW_NORMAL if fullscreen == cv2.WINDOW_FULLSCREEN else cv2.WINDOW_FULLSCREEN
+            cv2.setWindowProperty(self.window, cv2.WND_PROP_FULLSCREEN, mode)
+            return
+        if key in (ord('p'), ord('P'), ord(' '), ord('r'), ord('R'), ord('t'), ord('T')):
+            self.control_keys.put(key)
+
+    def apply_control_key(self, key):
+        if key in (ord('p'), ord('P'), ord(' ')):
+            self.pid_enabled = not self.pid_enabled
+            for tracker in self.trackers:
+                tracker.reset()
+            print('PID tracking' if self.pid_enabled else 'Simple tracking (PID off)', flush=True)
+            return
         if key in (ord('r'), ord('R')):
-            self.tracker.direction *= -1
-            self.tracker.reset()
-            print(f'Servo direction: {self.tracker.direction:+d}', flush=True)
+            axis = 0
+        elif key in (ord('t'), ord('T')):
+            axis = 1
+        else:
+            return
+        tracker = self.trackers[axis]
+        tracker.direction *= -1
+        tracker.reset()
+        print(f'Pin {self.servos[axis].pin} direction: {tracker.direction:+d}', flush=True)
 
     def tick(self):
         now = time.monotonic()
         dt, self.tick_time = now - self.tick_time, now
         with self.lock:
-            faces, frame_time = self.faces, self.frame_time
+            target, frame_time = self.target, self.frame_time
         if frame_time is None:
-            return True
+            return
         if now - frame_time > 2:
-            self.error = 'Camera frames stopped; stopping FaceStalker.'
-            self.loop.quit()
-            return False
+            raise RuntimeError('Camera frames stopped; stopping FaceStalker.')
         if now - frame_time > 0.2:
-            self.tracker.reset()
-            return True
-        if not self.servo.started:
+            for tracker in self.trackers:
+                tracker.reset()
+            return
+        for axis, (servo, tracker, extent) in enumerate(zip(
+                self.servos, self.trackers, (self.args.width, self.args.height))):
             try:
-                self.servo.set_pulse_us(self.tracker.pulse)
+                if not servo.started:
+                    servo.set_pulse_us(tracker.pulse)
+                    continue
+                previous = tracker.pulse
+                tracker.update_target(target, extent, dt, frame_time, axis=axis,
+                                      use_pid=self.pid_enabled)
+                if abs(tracker.pulse - previous) > 0.01:
+                    servo.set_pulse_us(tracker.pulse)
             except Exception as error:
-                self.error = f'Servo: {error}'
-                self.loop.quit()
-                return False
-            return True
-        previous = self.tracker.pulse
-        self.tracker.update(faces, self.args.width, dt, sample_time=frame_time)
-        if abs(self.tracker.pulse - previous) > 0.01:
-            try:
-                self.servo.set_pulse_us(self.tracker.pulse)
-            except Exception as error:
-                self.error = f'Servo: {error}'
-                self.loop.quit()
-                return False
-        return True
+                raise RuntimeError(f'Servo on pin {servo.pin}: {error}') from error
+    def control_loop(self, stop):
+        interval = CONTROL_INTERVAL_MS / 1000
+        self.tick_time = time.monotonic()
+        try:
+            while not stop.is_set() and not self.finished:
+                deadline = time.monotonic() + interval
+                while not stop.is_set():
+                    try:
+                        key = self.control_keys.get_nowait()
+                    except Empty:
+                        break
+                    self.apply_control_key(key)
+                if stop.is_set():
+                    break
+                self.tick()
+                stop.wait(max(0, deadline - time.monotonic()))
+        except Exception as error:
+            self.error = str(error)
+            GLib.idle_add(self.loop.quit)
 
     def run(self):
-        # Enable at neutral only after the first valid camera frame.
-        self.tick_time = time.monotonic()
         print(f'Tracking: max {TRACKING_SPEED_DEG_S:g} nominal deg/s with braking near centre, '
               f'{CONTROL_INTERVAL_MS} ms target updates, 50 Hz hardware PWM.', flush=True)
-        print(f'PID: Kp={self.tracker.kp:g}, Ki={self.tracker.ki:g}, Kd={self.tracker.kd:g}', flush=True)
-        timer = GLib.timeout_add(CONTROL_INTERVAL_MS, self.tick)
+        for servo, tracker in zip(self.servos, self.trackers):
+            print(f'Pin {servo.pin}: {tracker.minimum:g}–{tracker.maximum:g} us, '
+                  f'direction {tracker.direction:+d}; '
+                  f'PID Kp={tracker.kp:g}, Ki={tracker.ki:g}, Kd={tracker.kd:g}', flush=True)
+        stop = Event()
+        worker = Thread(target=self.control_loop, args=(stop,), name='servo-control')
+        worker.start()
         try:
             super().run()
         finally:
-            if GLib.MainContext.default().find_source_by_id(timer):
-                GLib.source_remove(timer)
+            stop.set()
+            worker.join()
 
 
 def main():
     parser = build_parser()
     parser.description = __doc__
-    parser.add_argument('--servo-direction', type=int, choices=(-1, 1), default=-1)
+    parser.set_defaults(width=640, height=360)
+    parser.add_argument('--servo-direction', type=int, choices=(-1, 1), default=-1,
+                        help='Pan direction on pin 15 (default: -1).')
+    parser.add_argument('--tilt-direction', type=int, choices=(-1, 1), default=-1,
+                        help='Tilt direction on pin 33 (default: -1).')
     parser.add_argument('--pid-kp', type=float, default=PID_KP)
     parser.add_argument('--pid-ki', type=float, default=PID_KI)
     parser.add_argument('--pid-kd', type=float, default=PID_KD)
@@ -104,8 +158,10 @@ def main():
         parser.error('Запустите ярлык FaceStalker на рабочем столе Jetson.')
     Gst.init(None)
     try:
-        with ServoController() as servo:
-            FaceStalker(args, servo).run()
+        with ExitStack() as stack:
+            pan = stack.enter_context(ServoController(pin=15))
+            tilt = stack.enter_context(ServoController(pin=33))
+            FaceStalker(args, pan, tilt).run()
     except (RuntimeError, OSError, ValueError, cv2.error) as error:
         print(error, file=sys.stderr)
         return 1

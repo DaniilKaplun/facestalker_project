@@ -76,6 +76,12 @@ uses `servo-positions.log`.
 
 ## Interactive servo calibration
 
+Choose physical pin 15 (MG90S) or 33 (FS90) in the same calibration window.
+Stop PWM before switching. Each pin loads and saves its own limits: pin 15
+keeps `servo_calibration.json`; pin 33 uses `servo_calibration_pin33.json`.
+Pin 33 requires the dual-PWM boot configuration from the Desktop launcher
+"FaceStalker — включить PWM на пине 33" and a reboot before calibration.
+
 The desktop shortcut "Калибровка сервы" launches `calibrate_servo.py` (Tkinter).
 It starts with PWM off. Stop the sweep before enabling calibration.
 
@@ -131,8 +137,20 @@ When a new feature needs another package, add it to the installer first.
 
 Launch "FaceStalker — слежение за лицом" on the Jetson Desktop, or run
 `bash run_facestalker.sh`. Close other camera applications first.
+FaceStalker defaults to 640×360 MJPEG capture. Resize the preview or press F
+to toggle fullscreen: only the displayed frame is scaled. YuNet still receives
+its fixed 640×640 input derived from the 640×360 capture, independent of the
+window size. The separate camera preview retains its own capture resolution.
+Servo updates run in a dedicated thread so a slow fullscreen redraw cannot
+directly delay the 10 ms control timer. Camera and GPU load can still affect
+when fresh detections arrive.
 DeepStream draws pink face boxes; the largest by area is highlighted green.
-The servo follows its horizontal centre toward the cyan vertical centre line.
+Both servos follow the same largest face toward the cyan crosshair: pin 15
+(MG90S/PWM1) moves left/right, pin 33 (FS90/PWM5) moves up/down.
+Each axis has its own PID state and reads its own calibration file at startup.
+The dual-PWM boot configuration must be active; calibrate both servos before
+tracking. If a calibration file is missing, that pin uses the nominal
+1000–2000 us range.
 It uses the saved calibration and moves at up to 150 nominal degrees/second
 toward the target with a PID velocity controller, braking near centre.
 It stops inside 4% of frame width either side of centre and resumes only
@@ -158,10 +176,15 @@ Run hardware-independent checks with `python3 -m unittest test_face_tracking -v`
 Without a face it holds its position; stale
 frames suspend movement, and a two-second camera stall exits and disables PWM.
 Q/Esc or closing the window releases the camera and disables PWM.
-R reverses the servo direction for the current run; to choose it at launch,
-use `bash run_facestalker.sh --servo-direction 1` (default: -1).
-The servo initially commands 1500 us after the first frame; its physical
-starting position cannot be sensed. Logs: `facestalker.log`.
+P or Space switches both axes between PID and simple tracking. Simple mode
+moves toward the face at 30 nominal degrees/s outside the stop/start zones,
+with no PID terms. Both modes hold position at centre or if the face is lost.
+Switching clears PID history; the preview shows the active mode.
+R reverses pan and T reverses tilt for the current run. To choose direction at
+launch, use `--servo-direction 1` for pan or `--tilt-direction 1` for tilt
+(both default to -1). Each pin has its own lock to prevent concurrent control.
+Both servos initially receive 1500 us after the first frame; their physical
+starting positions cannot be sensed. Logs: `facestalker.log`.
 No new dependencies are required. `--check-frames 120` runs a finite headless
 check including servo movement.
 
