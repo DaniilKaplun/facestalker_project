@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Single installer for all FaceStalker dependencies: camera, servo and DeepStream.
+# Single installer for all FaceStalker dependencies: camera, servo, DeepStream and ROS 2.
 set -euo pipefail
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$project_dir"
@@ -58,7 +58,21 @@ if [[ -z "$(apt-cache policy deepstream-9.2 | sed -n 's/.*Candidate: //p')" ]] |
   exit 1
 fi
 
-packages=(deepstream-9.2 python3-opencv opencv-data python3-tk python3-jetson-gpio python3-numpy
+# Official Open Robotics repository bootstrap for Ubuntu Noble.
+if [[ "$(dpkg-query -W -f='${db:Status-Status}' ros2-apt-source 2>/dev/null || true)" != installed ]]; then
+  (
+    temp_dir="$(mktemp -d)"
+    trap 'rm -f -- "$temp_dir/ros2-apt-source.deb"; rmdir -- "$temp_dir"' EXIT
+    ros_source_version=1.2.0
+    wget -O "$temp_dir/ros2-apt-source.deb" \
+      "https://github.com/ros-infrastructure/ros-apt-source/releases/download/$ros_source_version/ros2-apt-source_${ros_source_version}.noble_all.deb"
+    printf '%s  %s\n' 0804d9b13db770eb87019be414cd78378835228ad5fa801fc88758596dd8f7e5 \
+      "$temp_dir/ros2-apt-source.deb" | sha256sum -c -
+    sudo dpkg -i "$temp_dir/ros2-apt-source.deb"
+  )
+fi
+
+packages=(ros-jazzy-ros-base ros-jazzy-std-msgs deepstream-9.2 python3-opencv opencv-data python3-tk python3-jetson-gpio python3-numpy
   python3-venv python3-dev python3-gi python3-gst-1.0 \
   gir1.2-gstreamer-1.0 gstreamer1.0-tools gstreamer1.0-plugins-good \
   libgstreamer1.0-dev libglib2.0-dev cmake build-essential git)
@@ -143,12 +157,18 @@ fi
 g++ -std=c++17 -O2 -shared -fPIC \
   -I"$ds_include" -I"$cuda_include" "${cuda_crt_flags[@]}" "$project_dir/nvdsinfer_yunet.cpp" \
   -o "$project_dir/lib/libnvdsinfer_yunet.so"
+# ROS environment hooks may read unset variables.
+set +u
+source /opt/ros/jazzy/setup.bash
+set -u
 "$python" - <<'PY'
 import ctypes
 import cv2
 import gi
 import numpy as np
 import pyds
+import rclpy
+from std_msgs.msg import Int64MultiArray
 import tkinter
 import Jetson.GPIO
 gi.require_version('Gst', '1.0')
@@ -159,6 +179,15 @@ for name in ('nvinfer', 'nvstreammux', 'nvvideoconvert'):
 assert np.__version__.split('.')[0] == '1', 'pyds requires NumPy 1.x'
 parser = ctypes.CDLL('./lib/libnvdsinfer_yunet.so')
 assert parser.NvDsInferParseYuNet
-print('Camera, servo, DeepStream, Python bindings and YuNet parser verified.')
+rclpy.init(args=[])
+try:
+    node = rclpy.create_node('facestalker_dependency_check')
+    try:
+        node.create_publisher(Int64MultiArray, '/facestalker_dependency_check', 1)
+    finally:
+        node.destroy_node()
+finally:
+    rclpy.shutdown()
+print('Camera, servo, DeepStream, YuNet parser and ROS 2 verified.')
 PY
-echo "All FaceStalker dependencies installed and verified. Launch: bash $project_dir/run_photo_deepstream.sh"
+echo "All FaceStalker dependencies installed and verified. ROS 2 launch: bash $project_dir/run_facestalker_ros.sh"

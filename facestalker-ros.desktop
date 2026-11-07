@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=FaceStalker ROS 2
+Exec=bash /home/daniil/facestalker_project/run_facestalker_ros.sh
+Path=/home/daniil/facestalker_project
+Icon=camera-video
+Terminal=false
+Categories=AudioVideo;Video;

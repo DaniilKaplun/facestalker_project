@@ -140,7 +140,7 @@ class FaceStalker(DeepStreamPreview):
             worker.join()
 
 
-def main():
+def main(app_class=FaceStalker):
     parser = build_parser()
     parser.description = __doc__
     parser.set_defaults(width=640, height=360)
@@ -161,7 +161,7 @@ def main():
         with ExitStack() as stack:
             pan = stack.enter_context(ServoController(pin=15))
             tilt = stack.enter_context(ServoController(pin=33))
-            FaceStalker(args, pan, tilt).run()
+            app_class(args, pan, tilt).run()
     except (RuntimeError, OSError, ValueError, cv2.error) as error:
         print(error, file=sys.stderr)
         return 1
